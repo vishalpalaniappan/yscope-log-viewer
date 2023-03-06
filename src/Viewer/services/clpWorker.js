@@ -121,6 +121,14 @@ onmessage = function (e) {
             }
             break;
 
+        case CLP_WORKER_PROTOCOL.PREPARE_DOWNLOAD:
+            try {
+                fileInstance._decodePageWithWorker();
+            } catch (e) {
+                sendError(e.toString());
+            }
+            break;
+
         case CLP_WORKER_PROTOCOL.REDRAW_PAGE:
             try {
                 fileInstance.redraw(e.data.pageSize);

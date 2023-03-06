@@ -1,11 +1,13 @@
 import {ZstdCodec} from "../../../../customized-packages/zstd-codec/js";
 import CLP_WORKER_PROTOCOL from "../CLP_WORKER_PROTOCOL";
 import {readFile} from "../GetFile";
+import Database from "./Database";
 import {DataInputStream, DataInputStreamEOFError} from "./DataInputStream";
 import FourByteClpIrStreamReader from "./FourByteClpIrStreamReader";
 import ResizableUint8Array from "./ResizableUint8Array";
 import SimplePrettifier from "./SimplePrettifier";
 import {formatSizeInBytes, isBoolean, isNumeric} from "./utils";
+import WorkerPool from "../WorkerPool";
 
 /**
  * File manager to manage and track state of each file that is loaded.
@@ -41,6 +43,13 @@ class FileManager {
             path: null,
         };
 
+        if (fileInfo instanceof File) {
+            this._fileState.name = fileInfo.name;
+        } else {
+            this._fileState.name = fileInfo.split("/").slice(-1)[0];
+            this._fileState.path = fileInfo;
+        }
+
         this._state = {
             pageSize: pageSize,
             pages: null,
@@ -69,6 +78,9 @@ class FileManager {
         this._updateFileInfoCallback = updateFileInfoCallback;
 
         this._PRETTIFICATION_THRESHOLD = 200;
+
+        this._db = new Database(this._fileState.name);
+        this._workerPool = new WorkerPool();
     }
 
     /**
@@ -103,7 +115,7 @@ class FileManager {
      * @param {number} page
      * @param {string} linePos
      */
-    changePage (page, linePos) {
+    async changePage (page, linePos) {
         if (!isNumeric(page)) {
             throw (new Error("Invalid page number provided."));
         }
@@ -111,7 +123,8 @@ class FileManager {
             throw (new Error("Invalid page number provided."));
         }
         this._state.page = page;
-        this._decodePage();
+        await this._loadPage();
+        // this._decodePage();
 
         if (linePos === "top") {
             this._state.lineNumber = 1;
@@ -273,6 +286,7 @@ class FileManager {
             this._state.page = this._findPageFromEvent(this._state.logEventIdx);
 
             this._decodePage();
+            // this._loadPage();
 
             const [colNumber, lineNumber] = this._getLineNumberOfLogEvent(this._state.logEventIdx);
             this._state.columnNumber = colNumber;
@@ -372,6 +386,64 @@ class FileManager {
         return this._state.pages;
     };
 
+    async _loadPage () {
+        const pageData = await this._db.getPage(this._state.page);
+        if (pageData) {
+            // this._displayedMinVerbosityIx = pageData.minAvailableVerbosityIx;
+            this._logs = pageData.data;
+            this._updateLogsCallback(this._logs);
+        } else {
+            console.log("No data in database, need to load");
+            this._decodePage();
+        }
+    }
+
+    _decodePageWithWorker () {
+        for (let page = 1; page <= this._state.pages; page++) {
+            const numOfEvents = this._logEventOffsetsFiltered.length;
+            let logs;
+
+            // If there are no logs at this verbosity level, return
+            if (0 === numOfEvents) {
+                logs = "No logs at selected verbosity level";
+                this._updateLogsCallback(logs);
+                return;
+            }
+
+            // Calculate where to start decoding from and how many
+            // events to decode
+            // Corner case for the final page where the number of
+            // events is likely less than pageSize.
+            let logEventTarget;
+            let numberOfEvents;
+            if (page === this._state.pages) {
+                numberOfEvents = numOfEvents - ((page-1) * this._state.pageSize);
+                logEventTarget = numOfEvents - numberOfEvents;
+            } else {
+                numberOfEvents = (numOfEvents > this._state.pageSize)
+                    ?this._state.pageSize:numOfEvents;
+                logEventTarget = ((page-1) * this._state.pageSize);
+            }
+
+            const header = this._arrayBuffer.slice(0, this._logEventOffsets[0].startIndex);
+            const pageData = this._arrayBuffer.slice(
+                this._logEventOffsets[logEventTarget].startIndex,
+                this._logEventOffsets[logEventTarget + numberOfEvents - 1].endIndex
+            );
+
+            let bufferData = new Uint8Array(header.byteLength + pageData.byteLength);
+            bufferData.set(new Uint8Array(header), 0);
+            bufferData.set(new Uint8Array(pageData), header.byteLength);
+            bufferData = bufferData.buffer;
+
+            const logEvents = this._logEventOffsets.slice(
+                logEventTarget, logEventTarget + numberOfEvents
+            );
+
+            this._workerPool.assignTask([this._fileState.name, page, logEvents, bufferData]);
+        }
+    }
+
     /**
      * Decodes the logs for the selected page (_state.page).
      */
@@ -451,7 +523,9 @@ class FileManager {
         }
         this._displayedMinVerbosityIx = this._minAvailableVerbosityIx;
         this._logs = logs.trim();
+
         this._updateLogsCallback(this._logs);
+        // this._db.addPage(this._state.page, this._logs);
     };
 
     /**
@@ -524,6 +598,12 @@ class FileManager {
             // When decoding a message, we need the timestamp from
             // the previous event since the timestamps are delta encoded.
             this._logEventOffsets[i].mappedIndex = i;
+
+            if (i === 0) {
+                this._logEventOffsets[i].prevTimestamp = null;
+            } else {
+                this._logEventOffsets[i].prevTimestamp = this._logEventOffsets[i-1].timestamp;
+            }
 
             if (verbosity >= desiredMinVerbosityIx) {
                 this._logEventOffsetsFiltered.push(this._logEventOffsets[i]);

@@ -182,6 +182,13 @@ export function Viewer ({fileInfo, prettifyLog, logEventNumber}) {
         }
     }, [logFileState, loadingLogs]);
 
+    const prepareDownload = () => {
+        setStatusMessage(`Preparing download...`);
+        clpWorker.current.postMessage({
+            code: CLP_WORKER_PROTOCOL.PREPARE_DOWNLOAD
+        });
+    };
+
     /**
      * Handles messages sent from clpWorker and updates the
      * relevant component states
@@ -262,7 +269,9 @@ export function Viewer ({fileInfo, prettifyLog, logEventNumber}) {
                         fileMetaData={fileMetadata}
                         logFileState={logFileState}
                         changeStateCallback={changeState}
-                        loadFileCallback={loadFile}/>
+                        loadFileCallback={loadFile}
+                        prepareDownloadCallback={prepareDownload}
+                    />
 
                     <div className="flex-fill h-100 overflow-hidden">
                         <MonacoInstance

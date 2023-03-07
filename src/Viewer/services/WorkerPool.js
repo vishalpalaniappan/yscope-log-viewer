@@ -8,7 +8,7 @@ class WorkerPool {
      */
     constructor () {
         this.taskQueue = [];
-        this._maxNumOfWorkers = 3;
+        this._maxNumOfWorkers = 6;
 
         this._workerPool = new Array(this._maxNumOfWorkers);
         this._workerPool.fill(null);
@@ -50,11 +50,10 @@ class WorkerPool {
      * Process queue by assigning tasks to workers.
      */
     processQueue () {
-        console.log(this._workerPool);
         if (this.taskQueue.length > 0) {
             const worker = this.getWorker();
             if (worker) {
-                const task = this.queue.shift();
+                const task = this.taskQueue.shift();
                 worker.postMessage(task, [task.inputStream]);
                 worker.onmessage = () => {
                     this.freeWorker(worker);
@@ -72,6 +71,18 @@ class WorkerPool {
     assignTask (task) {
         this.taskQueue.push(task);
         this.processQueue();
+    }
+
+    /**
+     * Clear the worker pool.
+     */
+    clearPool () {
+        for (const index in this._workerPool) {
+            if (this._workerPool[index]) {
+                this._workerPool[index].terminate();
+                this._workerPool[index] = null;
+            }
+        }
     }
 }
 

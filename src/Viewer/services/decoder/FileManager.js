@@ -115,7 +115,6 @@ class FileManager {
             throw (new Error("Invalid page number provided."));
         }
         this._state.page = page;
-        this._decodePageWithWorker();
         this._decodePage();
 
         if (linePos === "top") {
@@ -192,6 +191,22 @@ class FileManager {
         this._getLogEventFromLineNumber();
         this._updateStateCallback(CLP_WORKER_PROTOCOL.UPDATE_STATE, this._state);
     };
+
+    /**
+     * Sends the pages to the worker pool to be decompressed into database.
+     */
+    startDecodingPagesToDatabase () {
+        for (let page = 1; page <= this._state.pages; page++) {
+            this._decodePageWithWorker(page);
+        }
+    }
+
+    /**
+     * Terminates all the workers in pool.
+     */
+    stopDecodingPagesToDatabase () {
+        this._workerPool.clearPool();
+    }
 
     /**
      * Redraws the page with the new page size.
@@ -388,14 +403,15 @@ class FileManager {
     /**
      * Sends page to be decoded with worker.
      *
+     * @param {number} page Page to be decoded.
      * @private
      */
-    _decodePageWithWorker () {
+    _decodePageWithWorker (page) {
         const numEventsAtLevel = this._logEventOffsetsFiltered.length;
 
         // Calculate where to start decoding from and how many events to decode
         // On final page, the numberOfEvents is likely less than pageSize
-        const targetEvent = ((this._state.page-1) * this._state.pageSize);
+        const targetEvent = ((page-1) * this._state.pageSize);
         const numberOfEvents = (targetEvent + this._state.pageSize >= numEventsAtLevel)
             ?numEventsAtLevel - targetEvent
             :this._state.pageSize;
@@ -409,7 +425,7 @@ class FileManager {
 
         this._workerPool.assignTask({
             fileName: this._fileInfo.name,
-            page: this._state.page,
+            page: page,
             logEvents: logEvents,
             inputStream: inputStream,
         });

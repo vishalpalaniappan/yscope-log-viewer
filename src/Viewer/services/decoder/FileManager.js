@@ -1,6 +1,7 @@
 import {ZstdCodec} from "../../../../customized-packages/zstd-codec/js";
 import CLP_WORKER_PROTOCOL from "../CLP_WORKER_PROTOCOL";
 import {readFile} from "../GetFile";
+import WorkerPool from "../WorkerPool";
 import {DataInputStream, DataInputStreamEOFError} from "./DataInputStream";
 import FourByteClpIrStreamReader from "./FourByteClpIrStreamReader";
 import ResizableUint8Array from "./ResizableUint8Array";
@@ -70,6 +71,8 @@ class FileManager {
         this._updateFileInfoCallback = updateFileInfoCallback;
 
         this._PRETTIFICATION_THRESHOLD = 200;
+
+        this._workerPool = new WorkerPool();
     }
 
     /**
@@ -404,14 +407,12 @@ class FileManager {
         const inputStream = combineArrayBuffers(this._IRStreamHeader, pageData);
         const logEvents = this._logEventOffsets.slice(targetEvent, targetEvent + numberOfEvents );
 
-        this.worker = new Worker(new URL("./DecodeWorker.js", import.meta.url));
-        this.worker.postMessage({
-            code: 1,
+        this._workerPool.assignTask({
             fileName: this._fileInfo.name,
             page: this._state.page,
             logEvents: logEvents,
             inputStream: inputStream,
-        }, [inputStream]);
+        });
     }
 
     /**

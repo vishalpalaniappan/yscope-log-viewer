@@ -1,3 +1,4 @@
+import Database from "../Database";
 import {DataInputStream, DataInputStreamEOFError} from "./DataInputStream";
 import FourByteClpIrStreamReader from "./FourByteClpIrStreamReader";
 import ResizableUint8Array from "./ResizableUint8Array";
@@ -34,6 +35,15 @@ const decodePage = async (fileName, logEvents, inputStream, page) => {
     const _textDecoder = new TextDecoder();
     const logs = _textDecoder.decode(_outputResizableBuffer.getUint8Array());
     const _logs = logs.trim();
+
+    const db = new Database(fileName);
+    db.addPage(page, _logs).then(() => {
+        console.debug(`Finished decoding page ${page} to database.`);
+        postMessage(true);
+    }).catch((e) => {
+        console.debug(e.toString());
+        postMessage(false);
+    });
 };
 
 onmessage = (e) => {

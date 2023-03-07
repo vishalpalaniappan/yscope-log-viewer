@@ -5,7 +5,7 @@ import {DataInputStream, DataInputStreamEOFError} from "./DataInputStream";
 import FourByteClpIrStreamReader from "./FourByteClpIrStreamReader";
 import ResizableUint8Array from "./ResizableUint8Array";
 import SimplePrettifier from "./SimplePrettifier";
-import {formatSizeInBytes, isBoolean, isNumeric} from "./utils";
+import {combineArrayBuffers, formatSizeInBytes, isBoolean, isNumeric} from "./utils";
 
 /**
  * File manager to manage and track state of each file that is loaded.
@@ -112,6 +112,7 @@ class FileManager {
             throw (new Error("Invalid page number provided."));
         }
         this._state.page = page;
+        this._decodePageWithWorker();
         this._decodePage();
 
         if (linePos === "top") {
@@ -300,9 +301,17 @@ class FileManager {
         this._outputResizableBuffer = new ResizableUint8Array(511000000);
         this._irStreamReader = new FourByteClpIrStreamReader(dataInputStream,
             this._prettify ? this._prettifyLogEventContent : null);
+        const decoder = this._irStreamReader._streamProtocolDecoder;
 
         try {
-            while (this._irStreamReader.indexNextLogEvent(this._logEventOffsets)) {}
+            while (this._irStreamReader.indexNextLogEvent(this._logEventOffsets)) {
+                const len = this._logEventOffsets.length;
+                if (len > 0) {
+                    const currEv = this._logEventOffsets[len - 1];
+                    const prevEv = this._logEventOffsets[len - 2];
+                    currEv.prevTs = (len === 1) ?decoder._metadataTimestamp :prevEv.timestamp;
+                }
+            }
         } catch (error) {
             // Ignore EOF errors since we should still be able
             // to print the decoded messages
@@ -372,6 +381,38 @@ class FileManager {
 
         return this._state.pages;
     };
+
+    /**
+     * Sends page to be decoded with worker.
+     *
+     * @private
+     */
+    _decodePageWithWorker () {
+        const numEventsAtLevel = this._logEventOffsetsFiltered.length;
+
+        // Calculate where to start decoding from and how many events to decode
+        // On final page, the numberOfEvents is likely less than pageSize
+        const targetEvent = ((this._state.page-1) * this._state.pageSize);
+        const numberOfEvents = (targetEvent + this._state.pageSize >= numEventsAtLevel)
+            ?numEventsAtLevel - targetEvent
+            :this._state.pageSize;
+
+        const pageData = this._arrayBuffer.slice(
+            this._logEventOffsets[targetEvent].startIndex,
+            this._logEventOffsets[targetEvent + numberOfEvents - 1].endIndex + 1
+        );
+        const inputStream = combineArrayBuffers(this._IRStreamHeader, pageData);
+        const logEvents = this._logEventOffsets.slice(targetEvent, targetEvent + numberOfEvents );
+
+        this.worker = new Worker(new URL("./DecodeWorker.js", import.meta.url));
+        this.worker.postMessage({
+            code: 1,
+            fileName: this._fileInfo.name,
+            page: this._state.page,
+            logEvents: logEvents,
+            inputStream: inputStream,
+        }, [inputStream]);
+    }
 
     /**
      * Decodes the logs for the selected page (_state.page).

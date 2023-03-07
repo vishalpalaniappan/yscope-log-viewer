@@ -35,6 +35,7 @@ class FileManager {
         this._arrayBuffer;
         this._outputResizableBuffer = null;
         this._availableVerbosityIndexes = new Set();
+        this._IRStreamHeader = null;
 
         this._fileState = {
             name: null,
@@ -312,7 +313,7 @@ class FileManager {
                 throw error;
             }
         }
-
+        this._IRStreamHeader = this._arrayBuffer.slice(0, this._logEventOffsets[0].startIndex);
         this._state.numberOfEvents = this._logEventOffsets.length;
     };
 
@@ -376,44 +377,40 @@ class FileManager {
      * Decodes the logs for the selected page (_state.page).
      */
     _decodePage () {
-        const numOfEvents = this._logEventOffsetsFiltered.length;
-        let logs;
+        const numEventsAtLevel = this._logEventOffsetsFiltered.length;
 
         // If there are no logs at this verbosity level, return
-        if (0 === numOfEvents) {
-            logs = "No logs at selected verbosity level";
+        if (0 === numEventsAtLevel) {
+            const logs = "No logs at selected verbosity level";
             this._updateLogsCallback(logs);
             return;
         }
 
         // Calculate where to start decoding from and how many events to decode
-        // Corner case for the final page where the number of
-        // events is likely less than pageSize.
-        let logEventTarget;
-        let numberOfEvents;
-        if (this._state.page === this._state.pages) {
-            numberOfEvents = numOfEvents - ((this._state.page-1) * this._state.pageSize);
-            logEventTarget = numOfEvents - numberOfEvents;
-        } else {
-            numberOfEvents = (numOfEvents > this._state.pageSize)?this._state.pageSize:numOfEvents;
-            logEventTarget = ((this._state.page-1) * this._state.pageSize);
-        }
+        // On final page, the numberOfEvents is likely less than pageSize
+        const logEventTarget = ((this._state.page-1) * this._state.pageSize);
+        const numberOfEvents = (logEventTarget + this._state.pageSize >= numEventsAtLevel)
+            ?numEventsAtLevel - logEventTarget
+            :this._state.pageSize;
 
+        // Create IRStream Reader with the input stream
         const dataInputStream = new DataInputStream(this._arrayBuffer);
-        this._outputResizableBuffer = new ResizableUint8Array(511000000);
         this._irStreamReader = new FourByteClpIrStreamReader(dataInputStream,
             this._state.prettify ? this._prettifyLogEventContent : null);
 
+        // Create variables to store output from reader
+        this._outputResizableBuffer = new ResizableUint8Array(511000000);
         this._availableVerbosityIndexes = new Set();
         this._logEventMetadata = [];
+
+        // Decode events
         for (let i = logEventTarget; i < logEventTarget + numberOfEvents; i++) {
             const event = this._logEventOffsetsFiltered[i];
             const decoder = this._irStreamReader._streamProtocolDecoder;
 
             this._irStreamReader._dataInputStream.seek(event.startIndex);
 
-            // Set the timestamp before decoding the message.
-            // If it is first message, use timestamp in metadata.
+            // Set ts before decoding. For first message, use ts in metadata.
             if (event.mappedIndex === 0) {
                 decoder._reset();
             } else {
@@ -425,9 +422,13 @@ class FileManager {
                     this._outputResizableBuffer,
                     this._logEventMetadata
                 );
+
+                // Save index in unfiltered log events to the metadata
                 const lastEvent = this._logEventMetadata[this._logEventMetadata.length - 1];
-                this._availableVerbosityIndexes.add(lastEvent["verbosityIx"]);
                 lastEvent.mappedIndex = event.mappedIndex;
+
+                // Save available verbosity
+                this._availableVerbosityIndexes.add(lastEvent["verbosityIx"]);
             } catch (error) {
                 // Ignore EOF errors since we should still be able
                 // to print the decoded messages
@@ -442,7 +443,7 @@ class FileManager {
         }
 
         // Decode the text and set the available verbosities
-        logs = this._textDecoder.decode(this._outputResizableBuffer.getUint8Array());
+        const logs = this._textDecoder.decode(this._outputResizableBuffer.getUint8Array());
 
         for (const verbosityIx of this._availableVerbosityIndexes) {
             if (verbosityIx < this._minAvailableVerbosityIx) {

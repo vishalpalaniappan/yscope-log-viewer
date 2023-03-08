@@ -169,12 +169,15 @@ export function Viewer ({fileInfo, prettifyLog, logEventNumber}) {
                     columnNumber: args.columnNumber,
                 });
                 break;
-            case STATE_CHANGE_TYPE.logEventIdx:
-                setLoadingLogs(true);
-                setStatusMessage(`Going to new log event ${args.logEventIdx}`);
+            case STATE_CHANGE_TYPE.startDownload:
                 clpWorker.current.postMessage({
-                    code: CLP_WORKER_PROTOCOL.GET_LINE_FROM_EVENT,
-                    desiredLogEventIdx: args.logEventIdx,
+                    code: CLP_WORKER_PROTOCOL.START_DOWNLOAD,
+                });
+                break;
+            case STATE_CHANGE_TYPE.stopDownload:
+                setStatusMessage("Stopped Download.");
+                clpWorker.current.postMessage({
+                    code: CLP_WORKER_PROTOCOL.STOP_DOWNLOAD,
                 });
                 break;
             default:

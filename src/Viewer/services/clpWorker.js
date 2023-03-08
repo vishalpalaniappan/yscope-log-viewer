@@ -129,6 +129,22 @@ onmessage = function (e) {
             }
             break;
 
+        case CLP_WORKER_PROTOCOL.START_DOWNLOAD:
+            try {
+                fileInstance.startDecodingPagesToDatabase();
+            } catch (e) {
+                sendError(e.toString());
+            }
+            break;
+
+        case CLP_WORKER_PROTOCOL.STOP_DOWNLOAD:
+            try {
+                fileInstance.stopDecodingPagesToDatabase();
+            } catch (e) {
+                sendError(e.toString());
+            }
+            break;
+
         default:
             break;
     }

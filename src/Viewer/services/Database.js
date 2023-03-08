@@ -27,7 +27,6 @@ class Database extends Dexie {
     getPage (page) {
         return new Promise(async (resolve, reject) => {
             this.logData.get({page: page}).then((data) => {
-                console.log(data);
                 resolve(data);
             }).catch((reason) => {
                 console.log(reason);
@@ -50,8 +49,7 @@ class Database extends Dexie {
                     page: page,
                     data: data,
                 }
-            ).then((data) => {
-                console.log(data);
+            ).then(() => {
                 resolve(true);
             }).catch((e) => {
                 reject(new Error(e));

@@ -8,7 +8,7 @@ class WorkerPool {
      */
     constructor () {
         this.taskQueue = [];
-        this._maxNumOfWorkers = 6;
+        this._maxNumOfWorkers = 4;
 
         this._workerPool = new Array(this._maxNumOfWorkers);
         this._workerPool.fill(null);
@@ -77,6 +77,7 @@ class WorkerPool {
      * Clear the worker pool.
      */
     clearPool () {
+        this.taskQueue = [];
         for (const index in this._workerPool) {
             if (this._workerPool[index]) {
                 this._workerPool[index].terminate();

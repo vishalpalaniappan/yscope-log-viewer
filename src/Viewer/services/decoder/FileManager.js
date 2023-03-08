@@ -53,6 +53,10 @@ class FileManager {
             columnNumber: null,
             numberOfEvents: null,
             verbosity: null,
+            downloadPageChunks: null,
+            compressedSize: null,
+            decompressedSize: null,
+            downloadChunkSize: 10000,
         };
 
         this._logs = "";
@@ -193,11 +197,23 @@ class FileManager {
     };
 
     /**
-     * Sends the pages to the worker pool to be decompressed into database.
+     * Sets up the variables needed for decoding of pages to database.
+     */
+    _setupDecodingPagesToDatabase () {
+        this._state.downloadChunkSize = 10000;
+        const numOfEvents = this._logEventOffsets.length;
+        this._state.downloadPageChunks = (0 === (numOfEvents % this._state.downloadChunkSize))
+            ? Math.floor(numOfEvents/this._state.downloadChunkSize)
+            : Math.floor(numOfEvents/this._state.downloadChunkSize) + 1;
+    }
+
+    /**
+     * Sends the chunks to the worker pool to be decompressed into database.
      */
     startDecodingPagesToDatabase () {
-        for (let page = 1; page <= this._state.pages; page++) {
-            this._decodePageWithWorker(page);
+        console.debug("Starting download...");
+        for (let chunk = 1; chunk <= this._state.downloadPageChunks; chunk++) {
+            this._decodePageWithWorker(chunk, this._state.downloadChunkSize);
         }
     }
 
@@ -205,6 +221,7 @@ class FileManager {
      * Terminates all the workers in pool.
      */
     stopDecodingPagesToDatabase () {
+        console.debug("Stopping download...");
         this._workerPool.clearPool();
     }
 
@@ -273,12 +290,13 @@ class FileManager {
             this._fileState = file;
             this._updateFileInfoCallback(this._fileState);
 
+            this._state.compressedSize = formatSizeInBytes(file.data.byteLength, false);
             this._loadingMessageCallback(
-                `Decompressing ${formatSizeInBytes(file.data.byteLength, false)}.`
+                `Decompressing ${this._state.compressedSize}.`
             );
             this._arrayBuffer = zstdStreaming.decompress(file.data).buffer;
-            const decompressedBytes = formatSizeInBytes(this._arrayBuffer.byteLength, false);
-            this._loadingMessageCallback(`Decompressed ${decompressedBytes}.`);
+            this._state.decompressedSize = formatSizeInBytes(this._arrayBuffer.byteLength, false);
+            this._loadingMessageCallback(`Decompressed ${this._state.decompressedSize}.`);
 
             this._buildIndex();
             this._filterLogEvents(-1);
@@ -297,6 +315,7 @@ class FileManager {
             const [colNumber, lineNumber] = this._getLineNumberOfLogEvent(this._state.logEventIdx);
             this._state.columnNumber = colNumber;
             this._state.lineNumber = lineNumber;
+            this._setupDecodingPagesToDatabase();
             this._updateStateCallback(CLP_WORKER_PROTOCOL.UPDATE_STATE, this._state);
         }).catch((reason) => {
             if (reason instanceof DataInputStreamEOFError) {
@@ -362,19 +381,13 @@ class FileManager {
      * Creates pages from the filtered log events and the page size.
      */
     _createPages () {
-        if (this._logEventOffsetsFiltered.length <= this._state.pageSize) {
-            this._state.page = 1;
-            this._state.pages = 1;
+        const numOfEvents = this._logEventOffsetsFiltered.length;
+        if (0 === numOfEvents % this._state.pageSize) {
+            this._state.pages = Math.floor(numOfEvents/this._state.pageSize);
         } else {
-            const numOfEvents = this._logEventOffsetsFiltered.length;
-            if (0 === numOfEvents % this._state.pageSize) {
-                this._state.pages = Math.floor(numOfEvents/this._state.pageSize);
-            } else {
-                this._state.pages = Math.floor(numOfEvents/this._state.pageSize) + 1;
-            }
-
-            this._state.page = this._state.pages;
+            this._state.pages = Math.floor(numOfEvents/this._state.pageSize) + 1;
         }
+        this._state.page = this._state.pages;
     };
 
     /**
@@ -404,17 +417,18 @@ class FileManager {
      * Sends page to be decoded with worker.
      *
      * @param {number} page Page to be decoded.
+     * @param {number} pageSize Size of the page to be decoded.
      * @private
      */
-    _decodePageWithWorker (page) {
+    _decodePageWithWorker (page, pageSize) {
         const numEventsAtLevel = this._logEventOffsetsFiltered.length;
 
         // Calculate where to start decoding from and how many events to decode
         // On final page, the numberOfEvents is likely less than pageSize
-        const targetEvent = ((page-1) * this._state.pageSize);
-        const numberOfEvents = (targetEvent + this._state.pageSize >= numEventsAtLevel)
+        const targetEvent = ((page-1) * pageSize);
+        const numberOfEvents = (targetEvent + pageSize >= numEventsAtLevel)
             ?numEventsAtLevel - targetEvent
-            :this._state.pageSize;
+            :pageSize;
 
         const pageData = this._arrayBuffer.slice(
             this._logEventOffsets[targetEvent].startIndex,
@@ -424,7 +438,7 @@ class FileManager {
         const logEvents = this._logEventOffsets.slice(targetEvent, targetEvent + numberOfEvents );
 
         this._workerPool.assignTask({
-            fileName: this._fileInfo.name,
+            fileName: this._fileState.name,
             page: page,
             logEvents: logEvents,
             inputStream: inputStream,

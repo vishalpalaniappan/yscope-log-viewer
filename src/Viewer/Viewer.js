@@ -15,6 +15,7 @@ import MessageLogger from "./services/MessageLogger";
 import STATE_CHANGE_TYPE from "./services/STATE_CHANGE_TYPE";
 import {isNumeric, modifyFileMetadata, modifyPage} from "./services/utils";
 import VerbatimURLParams from "./services/VerbatimURLParams";
+import TimelineGraph from "./components/TimelineGraph/TimelineGraph";
 
 import "./Viewer.scss";
 
@@ -268,13 +269,18 @@ export function Viewer ({fileInfo, prettifyLog, logEventNumber, timestamp}) {
                         logFileState={logFileState}
                         changeStateCallback={changeState}
                         loadFileCallback={loadFile}/>
+                    <div className="flex-fill h-100 overflow-hidden d-flex  flex-row">
+                        <div className="flex-fill">
+                            <MonacoInstance
+                                logData={logData}
+                                loadingLogs={loadingLogs}
+                                changeStateCallback={changeState}
+                                logFileState={logFileState}/>
+                        </div>
+                        <div style={{width: "200px",height:"100%"}}>
+                            <TimelineGraph></TimelineGraph>
+                        </div>
 
-                    <div className="flex-fill h-100 overflow-hidden">
-                        <MonacoInstance
-                            logData={logData}
-                            loadingLogs={loadingLogs}
-                            changeStateCallback={changeState}
-                            logFileState={logFileState}/>
                     </div>
 
                     <StatusBar

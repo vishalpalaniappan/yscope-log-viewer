@@ -6,6 +6,7 @@ import {THEME_STATES} from "./ThemeContext/THEME_STATES";
 import {ThemeContext} from "./ThemeContext/ThemeContext";
 import VerbatimURLParams from "./Viewer/services/VerbatimURLParams";
 import {Viewer} from "./Viewer/Viewer";
+import {Resizable} from "./Resizable/Resizable";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./App.scss";
@@ -89,10 +90,14 @@ export function App () {
             <ThemeContext.Provider value={{theme, switchTheme}}>
                 <DropFile handleFileDrop={handleFileChange}>
                     {(APP_STATE.FILE_VIEW === appMode) &&
-                        <Viewer logEventNumber={logEventIdx}
-                            timestamp={timestamp}
-                            prettifyLog={prettify}
-                            fileInfo={fileInfo}/>
+                        <div style={{width: "100%", height: "100%", padding: "30px"}}>
+                            <Resizable>
+                                <Viewer logEventNumber={logEventIdx}
+                                    timestamp={timestamp}
+                                    prettifyLog={prettify}
+                                    fileInfo={fileInfo}/>
+                            </Resizable>
+                        </div>
                     }
                 </DropFile>
             </ThemeContext.Provider>

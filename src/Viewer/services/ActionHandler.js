@@ -2,12 +2,6 @@ import CLP_WORKER_PROTOCOL from "./CLP_WORKER_PROTOCOL";
 import FileManager from "./decoder/FileManager";
 import {isBoolean, isNumeric} from "./decoder/utils";
 
-// TODO: Move decompressing of file from FileManager to ActionHandler.
-//  When there are multiple IRStreams in a single file, this will allow
-//  the creation of multiple FileManagers. When this feature is implemented,
-//  the action handler will contain multiple IRStreams and user can be prompted
-//  for which IRStream they want to load in the current viewer.
-
 /**
  * Manages all the actions that can be executed on provided file. In the future,
  * this action handler will also be used to execute jobs on file data.
